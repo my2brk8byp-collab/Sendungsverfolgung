@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Live-Sendungsverfolgung</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --accent: #3b82f6;
+      --accent2: #22c55e;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --danger: #ef4444;
+      --border: #2d3a4f;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+    }
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      border: none;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: white; width: 100%; }
+    .btn-success { background: var(--accent2); color: white; width: 100%; }
+    .btn-danger { background: var(--danger); color: white; width: 100%; }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-sm { padding: 8px 12px; font-size: 0.875rem; width: auto; }
+    .address-list { list-style: none; margin: 12px 0; }
+    .address-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--bg);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      border: 1px solid var(--border);
+    }
+    .address-item .num {
+      background: var(--accent);
+      color: white;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .address-item .text { flex: 1; font-size: 0.9rem; word-break: break-word; }
+    .address-item .remove {
+      background: none;
+      border: none;
+      color: var(--danger);
+      cursor: pointer;
+      font-size: 1.2rem;
+      padding: 0 4px;
+    }
+    #map {
+      height: 280px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      border: 1px solid var(--border);
+    }
+    .progress-section { margin-bottom: 16px; }
+    .progress-bar-bg {
+      height: 12px;
+      background: var(--bg);
+      border-radius: 6px;
+      overflow: hidden;
+      margin: 8px 0;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border-radius: 6px;
+      transition: width 0.6s ease;
+      width: 0%;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .stat {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+      border: 1px solid var(--border);
+    }
+    .stat-value {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--accent2);
+    }
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .status-live { background: rgba(34,197,94,0.15); color: var(--accent2); }
+    .status-waiting { background: rgba(59,130,246,0.15); color: var(--accent); }
+    .status-offline { background: rgba(239,68,68,0.15); color: var(--danger); }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: currentColor;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .share-box {
+      background: var(--bg);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      word-break: break-all;
+      font-size: 0.85rem;
+      margin: 12px 0;
+      color: var(--accent);
+    }
+    .hidden { display: none !important; }
+    .hint {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+    .destination-list {
+      margin-top: 12px;
+    }
+    .dest-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+    }
+    .dest-item:last-child { border-bottom: none; }
+    .dest-item.done { color: var(--muted); text-decoration: line-through; }
+    .dest-item .check { color: var(--accent2); }
+    .mode-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .mode-tab {
+      flex: 1;
+      padding: 10px;
+      text-align: center;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--muted);
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .mode-tab.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+    .error {
+      background: rgba(239,68,68,0.15);
+      color: var(--danger);
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      margin-bottom: 12px;
+    }
+    .footer {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 24px;
+      padding-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📦 Live-Sendungsverfolgung</h1>
+    <p class="subtitle">Teile deinen Standort & ETA wie bei einem Paket</p>
+
+    <!-- MODE SELECTION (nur wenn kein View-Link) -->
+    <div id="modeSelect" class="mode-tabs">
+      <div class="mode-tab active" data-mode="driver">Ich fahre</div>
+      <div class="mode-tab" data-mode="viewer">Ich warte</div>
+    </div>
+
+    <!-- ========== DRIVER MODE ========== -->
+    <div id="driverMode">
+      <div class="card" id="setupCard">
+        <label>Adressen hinzufügen (Zwischenstopps + Ziel)</label>
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <input type="text" id="addressInput" placeholder="z.B. Marienplatz 1, München" autocomplete="off">
+          <button class="btn btn-primary btn-sm" id="addAddressBtn">+</button>
+        </div>
+        <ul class="address-list" id="addressList"></ul>
+        <p class="hint">Tipp: Adresse eingeben und Enter oder + drücken. Reihenfolge = Reihenfolge der Stopps.</p>
+        <button class="btn btn-success" id="startBtn" style="margin-top:16px;" disabled>
+          Tracking starten
+        </button>
+      </div>
+
+      <div id="trackingCard" class="hidden">
+        <div class="card">
+          <div class="status-badge status-live" id="driverStatus">
+            <span class="dot"></span> Live
+          </div>
+          <div id="map"></div>
+          <div class="progress-section">
+            <div style="display:flex; justify-content:space-between; font-size:0.85rem;">
+              <span>Fortschritt</span>
+              <span id="progressPercent">0 %</span>
+            </div>
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" id="progressBar"></div>
+            </div>
+            <div class="stats">
+              <div class="stat">
+                <div class="stat-value" id="etaValue">–</div>
+                <div class="stat-label">ETA (Ankunft)</div>
+              </div>
+              <div class="stat">
+                <div class="stat-value" id="distValue">–</div>
+                <div class="stat-label">Verbleibend</div>
+              </div>
+            </div>
+          </div>
+          <div class="destination-list" id="destList"></div>
+        </div>
+
+        <div class="card">
+          <label>Link teilen (an die wartende Person)</label>
+          <div class="share-box" id="shareLink">Wird generiert…</div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-primary" id="copyLinkBtn">Link kopieren</button>
+            <button class="btn btn-outline" id="shareNativeBtn" style="display:none;">Teilen…</button>
+          </div>
+          <p class="hint">Der Empfänger sieht deine Position und ETA in Echtzeit. Der Link funktioniert, solange diese Seite geöffnet bleibt.</p>
+        </div>
+
+        <button class="btn btn-danger" id="stopBtn" style="margin-top:8px;">Tracking beenden</button>
+      </div>
+    </div>
+
+    <!-- ========== VIEWER MODE ========== -->
+    <div id="viewerMode" class="hidden">
+      <div class="card" id="viewerWaiting">
+        <div class="status-badge status-waiting">
+          <span class="dot"></span> Warte auf Verbindung…
+        </div>
+        <p class="hint">Öffne den Link, den dir die fahrende Person geschickt hat. Oder gib die Peer-ID manuell ein:</p>
+        <input type="text" id="manualPeerId" placeholder="Peer-ID einfügen" style="margin:12px 0;">
+        <button class="btn btn-primary" id="connectManualBtn">Verbinden</button>
+      </div>
+
+      <div id="viewerLive" class="hidden">
+        <div class="card">
+          <div class="status-badge status-live" id="viewerStatus">
+            <span class="dot"></span> Live verbunden
+          </div>
+          <div id="mapViewer" style="height:280px; border-radius:12px; margin-bottom:16px; border:1px solid var(--border);"></div>
+          <div class="progress-section">
+            <div style="display:flex; justify-content:space-between; font-size:0.85rem;">
+              <span>Fortschritt</span>
+              <span id="viewerProgressPercent">0 %</span>
+            </div>
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" id="viewerProgressBar"></div>
+            </div>
+            <div class="stats">
+              <div class="stat">
+                <div class="stat-value" id="viewerEta">–</div>
+                <div class="stat-label">ETA (Ankunft)</div>
+              </div>
+              <div class="stat">
+                <div class="stat-value" id="viewerDist">–</div>
+                <div class="stat-label">Verbleibend</div>
+              </div>
+            </div>
+          </div>
+          <div class="destination-list" id="viewerDestList"></div>
+          <p class="hint" id="lastUpdate">Zuletzt aktualisiert: –</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="errorBox" class="error hidden"></div>
+    <div class="footer">
+      Kostenlos · OpenStreetMap · OSRM · PeerJS (WebRTC)<br>
+      Keine Daten werden auf Servern gespeichert.
+    </div>
+  </div>
+
+  <script>
+    // ========== STATE ==========
+    let addresses = [];          // {lat, lon, name, done}
+    let peer = null;
+    let connections = [];        // DataConnections to viewers
+    let watchId = null;
+    let map = null, marker = null, routeLayer = null;
+    let mapViewer = null, markerViewer = null, routeLayerViewer = null;
+    let totalDistanceM = 0;      // initial remaining distance
+    let lastPos = null;
+    let currentEtaSec = null;
+    let lastRouteTime = 0;
+    const ROUTE_INTERVAL = 25000; // ms between OSRM calls
+
+    // ========== HELPERS ==========
+    function showError(msg) {
+      const el = document.getElementById('errorBox');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      setTimeout(() => el.classList.add('hidden'), 6000);
+    }
+
+    function formatDuration(sec) {
+      if (sec == null || isNaN(sec)) return '–';
+      sec = Math.round(sec);
+      if (sec < 60) return sec + ' s';
+      const m = Math.floor(sec / 60);
+      if (m < 60) return m + ' min';
+      const h = Math.floor(m / 60);
+      const rm = m % 60;
+      return h + ' h ' + rm + ' min';
+    }
+
+    function formatDistance(m) {
+      if (m == null || isNaN(m)) return '–';
+      if (m < 1000) return Math.round(m) + ' m';
+      return (m / 1000).toFixed(1) + ' km';
+    }
+
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = d => d * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    // ========== GEOCODING (Nominatim) ==========
+    async function geocode(query) {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=0`;
+      const res = await fetch(url, {
+        headers: { 'Accept-Language': 'de', 'User-Agent': 'LiveSendungsverfolgung/1.0' }
+      });
+      if (!res.ok) throw new Error('Geocoding fehlgeschlagen');
+      const data = await res.json();
+      if (!data.length) throw new Error('Adresse nicht gefunden');
+      return {
+        lat: parseFloat(data[0].lat),
+        lon: parseFloat(data[0].lon),
+        name: data[0].display_name.split(',').slice(0, 3).join(',')
+      };
+    }
+
+    // ========== OSRM ROUTING ==========
+    async function getRoute(fromLat, fromLon, toPoints) {
+      // toPoints: array of {lat,lon}
+      const coords = [`${fromLon},${fromLat}`]
+        .concat(toPoints.map(p => `${p.lon},${p.lat}`))
+        .join(';');
+      const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Routing fehlgeschlagen');
+      const data = await res.json();
+      if (data.code !== 'Ok' || !data.routes.length) throw new Error('Keine Route gefunden');
+      const route = data.routes[0];
+      return {
+        distance: route.distance,      // meters
+        duration: route.duration,      // seconds
+        geometry: route.geometry       // GeoJSON
+      };
+    }
+
+    // ========== UI: ADDRESS LIST ==========
+    function renderAddressList() {
+      const ul = document.getElementById('addressList');
+      ul.innerHTML = '';
+      addresses.forEach((a, i) => {
+        const li = document.createElement('li');
+        li.className = 'address-item';
+        li.innerHTML = `
+          <span class="num">${i + 1}</span>
+          <span class="text">${a.name}</span>
+          <button class="remove" data-i="${i}">×</button>
+        `;
+        ul.appendChild(li);
+      });
+      document.getElementById('startBtn').disabled = addresses.length === 0;
+      ul.querySelectorAll('.remove').forEach(btn => {
+        btn.onclick = () => {
+          addresses.splice(+btn.dataset.i, 1);
+          renderAddressList();
+        };
+      });
+    }
+
+    document.getElementById('addAddressBtn').onclick = addAddress;
+    document.getElementById('addressInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') addAddress();
+    });
+
+    async function addAddress() {
+      const input = document.getElementById('addressInput');
+      const q = input.value.trim();
+      if (!q) return;
+      input.disabled = true;
+      try {
+        const place = await geocode(q);
+        addresses.push({ ...place, done: false });
+        input.value = '';
+        renderAddressList();
+      } catch (err) {
+        showError(err.message || 'Adresse konnte nicht gefunden werden');
+      } finally {
+        input.disabled = false;
+        input.focus();
+      }
+    }
+
+    // ========== MAP ==========
+    function initMap(containerId) {
+      const m = L.map(containerId).setView([51.16, 10.45], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap',
+        maxZoom: 19
+      }).addTo(m);
+      return m;
+    }
+
+    function updateDriverMap(lat, lon, geometry) {
+      if (!map) {
+        map = initMap('map');
+        marker = L.marker([lat, lon]).addTo(map);
+      } else {
+        marker.setLatLng([lat, lon]);
+      }
+      if (geometry && geometry.coordinates) {
+        if (routeLayer) map.removeLayer(routeLayer);
+        routeLayer = L.geoJSON(geometry, {
+          style: { color: '#3b82f6', weight: 5, opacity: 0.8 }
+        }).addTo(map);
+        const bounds = routeLayer.getBounds();
+        if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
+      } else {
+        map.setView([lat, lon], Math.max(map.getZoom(), 14));
+      }
+      // destination markers
+      addresses.forEach((a, i) => {
+        if (!a._marker) {
+          a._marker = L.circleMarker([a.lat, a.lon], {
+            radius: 8,
+            color: '#22c55e',
+            fillColor: '#22c55e',
+            fillOpacity: 0.9
+          }).addTo(map).bindPopup((i + 1) + '. ' + a.name);
+        }
+      });
+    }
+
+    function updateViewerMap(lat, lon, geometry, dests) {
+      if (!mapViewer) {
+        mapViewer = initMap('mapViewer');
+        markerViewer = L.marker([lat, lon]).addTo(mapViewer);
+      } else {
+        markerViewer.setLatLng([lat, lon]);
+      }
+      if (geometry && geometry.coordinates) {
+        if (routeLayerViewer) mapViewer.removeLayer(routeLayerViewer);
+        routeLayerViewer = L.geoJSON(geometry, {
+          style: { color: '#3b82f6', weight: 5, opacity: 0.8 }
+        }).addTo(mapViewer);
+        const bounds = routeLayerViewer.getBounds();
+        if (bounds.isValid()) mapViewer.fitBounds(bounds, { padding: [40, 40] });
+      } else {
+        mapViewer.setView([lat, lon], Math.max(mapViewer.getZoom(), 14));
+      }
+      if (dests) {
+        dests.forEach((a, i) => {
+          L.circleMarker([a.lat, a.lon], {
+            radius: 8,
+            color: '#22c55e',
+            fillColor: '#22c55e',
+            fillOpacity: 0.9
+          }).addTo(mapViewer).bindPopup((i + 1) + '. ' + a.name);
+        });
+      }
+    }
+
+    // ========== PROGRESS & ETA ==========
+    function updateProgressUI(remainingM, durationSec, isViewer = false) {
+      const pct = totalDistanceM > 0
+        ? Math.min(100, Math.max(0, Math.round((1 - remainingM / totalDistanceM) * 100)))
+        : 0;
+      if (isViewer) {
+        document.getElementById('viewerProgressBar').style.width = pct + '%';
+        document.getElementById('viewerProgressPercent').textContent = pct + ' %';
+        document.getElementById('viewerEta').textContent = formatDuration(durationSec);
+        document.getElementById('viewerDist').textContent = formatDistance(remainingM);
+      } else {
+        document.getElementById('progressBar').style.width = pct + '%';
+        document.getElementById('progressPercent').textContent = pct + ' %';
+        document.getElementById('etaValue').textContent = formatDuration(durationSec);
+        document.getElementById('distValue').textContent = formatDistance(remainingM);
+      }
+    }
+
+    function renderDestList(containerId, dests) {
+      const el = document.getElementById(containerId);
+      el.innerHTML = dests.map((d, i) => `
+        <div class="dest-item ${d.done ? 'done' : ''}">
+          <span>${d.done ? '✓' : (i + 1)}</span>
+          <span>${d.name}</span>
+        </div>
+      `).join('');
+    }
+
+    // ========== DRIVER: START TRACKING ==========
+    document.getElementById('startBtn').onclick = startTracking;
+
+    async function startTracking() {
+      if (!navigator.geolocation) {
+        showError('Dein Browser unterstützt keine Standortbestimmung.');
+        return;
+      }
+      document.getElementById('setupCard').classList.add('hidden');
+      document.getElementById('trackingCard').classList.remove('hidden');
+      document.getElementById('modeSelect').classList.add('hidden');
+
+      // PeerJS
+      peer = new Peer();
+      peer.on('open', id => {
+        const link = location.origin + location.pathname + '?view=' + id;
+        document.getElementById('shareLink').textContent = link;
+        // native share
+        if (navigator.share) {
+          document.getElementById('shareNativeBtn').style.display = 'inline-flex';
+          document.getElementById('shareNativeBtn').onclick = () => {
+            navigator.share({ title: 'Live-Sendungsverfolgung', text: 'Schau, wo ich gerade bin:', url: link });
+          };
+        }
+      });
+      peer.on('connection', conn => {
+        connections.push(conn);
+        conn.on('open', () => {
+          // send initial destinations
+          conn.send({ type: 'destinations', data: addresses });
+          if (lastPos) {
+            conn.send({
+              type: 'location',
+              lat: lastPos.lat,
+              lon: lastPos.lon,
+              remaining: lastPos.remaining,
+              duration: lastPos.duration,
+              geometry: lastPos.geometry,
+              total: totalDistanceM
+            });
+          }
+        });
+        conn.on('close', () => {
+          connections = connections.filter(c => c !== conn);
+        });
+      });
+      peer.on('error', err => showError('Peer-Fehler: ' + err.type));
+
+      // Geolocation
+      watchId = navigator.geolocation.watchPosition(
+        onPosition,
+        err => showError('Standortfehler: ' + err.message),
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+      );
+
+      renderDestList('destList', addresses);
+    }
+
+    async function onPosition(pos) {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      const now = Date.now();
+
+      // mark destinations as done if close (< 80 m)
+      addresses.forEach(a => {
+        if (!a.done && haversine(lat, lon, a.lat, a.lon) < 80) {
+          a.done = true;
+        }
+      });
+      renderDestList('destList', addresses);
+
+      const remainingPoints = addresses.filter(a => !a.done);
+      if (remainingPoints.length === 0) {
+        // arrived
+        updateProgressUI(0, 0);
+        broadcast({ type: 'arrived' });
+        document.getElementById('driverStatus').innerHTML = '<span class="dot"></span> Angekommen!';
+        return;
+      }
+
+      let remaining = null, duration = null, geometry = null;
+
+      if (now - lastRouteTime > ROUTE_INTERVAL || !lastPos) {
+        try {
+          const route = await getRoute(lat, lon, remainingPoints);
+          remaining = route.distance;
+          duration = route.duration;
+          geometry = route.geometry;
+          if (!totalDistanceM) totalDistanceM = remaining; // set once
+          lastRouteTime = now;
+        } catch (e) {
+          console.warn(e);
+          // fallback: straight-line
+          remaining = remainingPoints.reduce((sum, p, i, arr) => {
+            const prev = i === 0 ? { lat, lon } : arr[i-1];
+            return sum + haversine(prev.lat, prev.lon, p.lat, p.lon);
+          }, 0);
+          duration = remaining / 13.9; // ~50 km/h
+        }
+      } else {
+        // approximate from last known
+        remaining = lastPos.remaining;
+        duration = lastPos.duration;
+        geometry = lastPos.geometry;
+        // simple speed-based decay
+        if (lastPos.lat) {
+          const moved = haversine(lastPos.lat, lastPos.lon, lat, lon);
+          remaining = Math.max(0, remaining - moved);
+          duration = Math.max(0, duration - (now - (lastPos.ts || now)) / 1000);
+        }
+      }
+
+      lastPos = { lat, lon, remaining, duration, geometry, ts: now };
+      updateDriverMap(lat, lon, geometry);
+      updateProgressUI(remaining, duration);
+
+      // broadcast to all viewers
+      broadcast({
+        type: 'location',
+        lat, lon,
+        remaining, duration,
+        geometry,
+        total: totalDistanceM,
+        destinations: addresses
+      });
+    }
+
+    function broadcast(msg) {
+      connections.forEach(c => {
+        if (c.open) c.send(msg);
+      });
+    }
+
+    document.getElementById('copyLinkBtn').onclick = () => {
+      const text = document.getElementById('shareLink').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copyLinkBtn');
+        btn.textContent = 'Kopiert!';
+        setTimeout(() => btn.textContent = 'Link kopieren', 2000);
+      });
+    };
+
+    document.getElementById('stopBtn').onclick = () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      if (peer) peer.destroy();
+      location.reload();
+    };
+
+    // ========== VIEWER MODE ==========
+    function startViewer(peerId) {
+      document.getElementById('modeSelect').classList.add('hidden');
+      document.getElementById('driverMode').classList.add('hidden');
+      document.getElementById('viewerMode').classList.remove('hidden');
+
+      peer = new Peer();
+      peer.on('open', () => {
+        const conn = peer.connect(peerId);
+        conn.on('open', () => {
+          document.getElementById('viewerWaiting').classList.add('hidden');
+          document.getElementById('viewerLive').classList.remove('hidden');
+        });
+        conn.on('data', data => {
+          if (data.type === 'destinations') {
+            renderDestList('viewerDestList', data.data);
+          } else if (data.type === 'location') {
+            if (data.total) totalDistanceM = data.total;
+            updateViewerMap(data.lat, data.lon, data.geometry, data.destinations);
+            updateProgressUI(data.remaining, data.duration, true);
+            if (data.destinations) renderDestList('viewerDestList', data.destinations);
+            document.getElementById('lastUpdate').textContent =
+              'Zuletzt aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
+          } else if (data.type === 'arrived') {
+            document.getElementById('viewerStatus').innerHTML = '<span class="dot"></span> Angekommen!';
+            updateProgressUI(0, 0, true);
+          }
+        });
+        conn.on('close', () => {
+          document.getElementById('viewerStatus').className = 'status-badge status-offline';
+          document.getElementById('viewerStatus').innerHTML = 'Verbindung getrennt';
+        });
+      });
+      peer.on('error', err => showError('Verbindungsfehler: ' + err.type));
+    }
+
+    document.getElementById('connectManualBtn').onclick = () => {
+      const id = document.getElementById('manualPeerId').value.trim();
+      if (id) startViewer(id);
+    };
+
+    // ========== MODE TABS ==========
+    document.querySelectorAll('.mode-tab').forEach(tab => {
+      tab.onclick = () => {
+        document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const mode = tab.dataset.mode;
+        document.getElementById('driverMode').classList.toggle('hidden', mode !== 'driver');
+        document.getElementById('viewerMode').classList.toggle('hidden', mode !== 'viewer');
+      };
+    });
+
+    // ========== URL PARAM ==========
+    const params = new URLSearchParams(location.search);
+    if (params.has('view')) {
+      startViewer(params.get('view'));
+    }
+  </script>
+</body>
+</html>
